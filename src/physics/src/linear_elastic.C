@@ -1,4 +1,4 @@
-// Linear_Elastic.h Class for Linear ver
+// Linear_Elastic.h Class for Linear Elastic Solver within GRINS
 
 #ifndef GRINS_LINEAR_ELASTIC_C
 #define GRINS_LINEAR_ELASTIC_C
@@ -28,56 +28,162 @@ namespace GRINS
 {
 
 	class LinearElastic : public SolidMechanicsAbstract
-	
-	
-	
-	LinearElastic::LinearElastic( const GRINS::PhysicsName& physics_name, const GetPot& input)
-		
-		: LinearElastic(physics_name,is_compressible)
-			{
-				this->_ic_handler = new GenericICHandler(physics_name,input)	
-			}
 
-		      void LinearElastic::init_context(AssemblyContext& context)
-			      {
-				      this->get_fe(context)->get_JxW();
-				      this->get_fe(context)->get_phi();
-				      this->get_fe(context)->get_dphidxi();
-				      this->get_fe(context)->get_dphideta();
 
-				      // Need for constructing metric tensors
-				      this->get_fe(context)->get_dxyzdxi();
-				      this->get_fe(context)->get_dxyzdeta();
-				      this->get_fe(context)->get_dxidx();
-				      this->get_fe(context)->get_dxidy();
-				      this->get_fe(context)->get_dxidz();
-				      this->get_fe(context)->get_detadx();
-				      this->get_fe(context)->get_detady();
-				      this->get_fe(context)->get_detadz();
-			      }
+
+			      LinearElastic::LinearElastic( const GRINS::PhysicsName& physics_name, const GetPot& input)
+
+				      : LinearElastic(physics_name,is_compressible)
+				      {
+					      this->_ic_handler = new GenericICHandler(physics_name,input)	
+				      }
+
+	void LinearElastic::init_context(AssemblyContext& context)
+	{
+		this->get_fe(context)->get_JxW();
+		this->get_fe(context)->get_phi();
+		this->get_fe(context)->get_dphidxi();
+		this->get_fe(context)->get_dphideta();
+
+		// Need for constructing metric tensors
+		this->get_fe(context)->get_dxyzdxi();
+		this->get_fe(context)->get_dxyzdeta();
+		this->get_fe(context)->get_dxidx();
+		this->get_fe(context)->get_dxidy();
+		this->get_fe(context)->get_dxidz();
+		this->get_fe(context)->get_detadx();
+		this->get_fe(context)->get_detady();
+		this->get_fe(context)->get_detadz();
+	}
 
 	LinearElastic::init_variables( libMesh::FEMSystem* system )
-		{
+	{
 
-		}
+	}
 
 	LinearElastic::mass_residual_impl(bool compute_jacobian,AssembleContext& context, InterriorFuncType interior_solution, VarDerivType get_sol_deriv, libMesh::Real mu )
-		{
+	{
+		const unsigned int n_u_dofs = context.get_dof_indicies(_disp_vars.u()).size();
 
+		const std::vector<libMesh::Real> &JxW = this->get_fe(context)->get_phi();
+
+		// Residuals that is being populated
+		libMesh::DenseSubVector<libMesh::Number> &Fu = context.get_elem_resisual(_disp_vars.u());
+		libMesh::DenseSubVector<libMesh::Number> &Fv = context.get_elem_resisual(_disp_vars.v());
+		libMesh::DenseSubVector<libMesh::Number> &Fw = context.get_elem_resisual(_disp_vars.w());
+
+		libMesh::DenseSubMatrix<libMesh::Number>& Kuu = context.get_elem_jacobian(_disp_vars.u(),_disp_vars.u());
+		libMesh::DenseSubMatrix<libMesh::Number>& Kvv = context.get_elem_jacobian(_disp_vars.v(),_disp_vars.v());
+		libMesh::DenseSubMatrix<libMesh::Number>& Kww = context.get_elem_jacobian(_disp_vars.w(),_disp_vars.w());
+
+		unsigned int n_qpoints = context.get_element_qrule().n_points();
+
+		for (unsigned int qp=0; qp != n_qpoints; qp++)
+		{
+			libMesh::Real jac = JxW[qp];
+
+			libMesh::Real u_ddot = 0.0; 
+			libMesh::Real v_ddot = 0.0;
+			libMesh::Real w_ddot = 0.0;
+			(context*interior_solution)( _disp_vars.u(),qp, u_ddot );
+			(context*interior_solution)( _disp_vars.v(),qp, v_ddot );
+			(context*interior_solution)( _disp_vars.w(),qp, w_ddot );
+
+			for (unsigned int i=0; i != n_u_dofs; i++)
+			{
+				Fu(i) += 0;
+				Fv(i) += 0;
+				Fw(i) += 0;
+
+				if( compute_jacobian )
+				{
+					for (unsigned int j=0; j != n_u_dofs; j++)
+					{
+						libMesh::Real jac_term = this->_rho*_h0*u_phi[i][qp]*u_phi[j][qp]*jac;
+						jac_term *= mu*(context.*get_solution_deriv)();
+
+						Kuu(i,j) += jac_term;
+						Kvv(i,j) += jac_term;
+						Kww(i,j) += jac_term;
+
+
+					}
+				}
+			}
 		}
+
+	}
+
 
 	LinearElastic::compute_metric_tensors(unsigned int qp, const libMesh::FEBase& elem, const AssemblyContext& context, const libMesh::Gradient& grad_u, const libMesh::Gradient& grad_v, const libMesh& grad_w, 
-					      libMesh::TensorValue<libMesh::Real>& a_cov, libMesh::TensorValue<libMesh::Real>& a_contra, libMesh::TensorValue<libMesh::Real>& A_cov, libMesh::TensorValue<libMesh::Real>& A_contra,
-					      libmesh::Real& lambda_sq )
-		{
+			libMesh::TensorValue<libMesh::Real>& a_cov, libMesh::TensorValue<libMesh::Real>& a_contra, libMesh::TensorValue<libMesh::Real>& A_cov, libMesh::TensorValue<libMesh::Real>& A_contra,
+			libmesh::Real& lambda_sq )
+	{
 
-		}	
+	}	
 
 	LinearElastic::register_postprocessingvars(const GetPot& input, PostProcessedQuatitities<libMesh::Reak>& postprocessing)
+	{
+		std::string section = "Physics/"+PhysicsNaming::elastic_membrane()+"/output_vars";
+
+		if( input.have_variable(section) )
 		{
+			unsigned int n_vars = input.vector_variable_size(section);
 
-		}
+			for( unsigned int v = 0; v < n_vars; v++ )
+			{
+				std::string name = input(section,"DIE!",v);
 
+				if( name == std::string("stress") )
+				{
+					// sigma_xx, sigma_xy, sigma_yy, sigma_yx = sigma_xy
+					// sigma_zz = 0 by assumption of this Physics
+					_stress_indices.resize(6);
+
+					this->_stress_indices[0] = postprocessing.register_quantity("stress_xx");
+
+					this->_stress_indices[1] = postprocessing.register_quantity("stress_yy");
+
+					this->_stress_indices[2] = postprocessing.register_quantity("stress_zz");
+
+					this->_stress_indices[3] = postprocessing.register_quantity("sigma_xy");
+
+					this->_stress_indices[4] = postprocessing.register_quantity("sigma_xz");
+
+					this->_stress_indices[5] = postprocessing.register_quantity("sigma_yz");
+
+				}
+				else if( name == std::string( "strain" ) )
+				{
+					// eps_xx, eps_yy, eps_zz, eps_xy, eps_xz, eps_yz
+					_strain_indices.resize(6);
+
+					this->_strain_indices[0] = postprocessing.register_quantity("strain_xx");
+
+					this->_strain_indices[1] = postprocessing.register_quantity("strain_yy");
+
+					this->_strain_indices[2] = postprocessing.register_quantity("strain_zz");
+
+					this->_strain_indices[3] = postprocessing.register_quantity("strain_xy");
+
+					this->_strain_indices[4] = postprocessing.register_quantity("strain_xz");
+
+					this->_strain_indices[5] = postprocessing.register_quantity("strain_yz");	
+				}
+				else
+				{
+					std::cerr << "Error: Invalue output_vars value for "+PhysicsNaming::elastic_membrane() << std::endl
+						<< "       Found " << name << std::endl
+						<< "       Acceptable values are: stress" << std::endl
+						<< "                              strain" << std::endl;
+					libmesh_error();
+
+				}
+			}
+
+		} 
+
+	} // end register_postprocessing
 
 	LinearElastic::element_time_derivative
 		(bool compute_jacobian, AssemblyContext & context)
@@ -252,23 +358,18 @@ namespace GRINS
 			} // end for loop through qp
 		} //end element time derivative			
 
-	void LinearElastic::element_constraint
-	(bool compute_jacobian, AssemblyContext & context)
-		{
-		
-		}
 
-	void LinearElastic::element_contraint(bool compute_jacobian, AssemblyContext & context)
-		{
+	Linearelastic::element_contraint(bool compute_jacobian, AssemblyContext & context)
+	{
 
-		}
-	
+	}
+
 
 	void LinearElastic::compute_postprocessed_quantity(unsigned int quantity_index, const AssemblyContext& context, const libMesh::Point& point, libMesh::Real& value)
-		{
+	{
 
-		}
-			
+	}
+
 } // end class LinearElastic
 
 } // end namespace GRINS
