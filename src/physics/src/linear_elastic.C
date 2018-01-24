@@ -29,163 +29,74 @@ namespace GRINS
 
 	class LinearElastic : public SolidMechanicsAbstract
 
-
-
 			      LinearElastic::LinearElastic( const GRINS::PhysicsName& physics_name, const GetPot& input)
 
 				      : LinearElastic(physics_name,is_compressible)
 				      {
 					      this->_ic_handler = new GenericICHandler(physics_name,input)	
 				      }
-
+		
 	void LinearElastic::init_context(AssemblyContext& context)
-	{
-		this->get_fe(context)->get_JxW();
-		this->get_fe(context)->get_phi();
-		this->get_fe(context)->get_dphidxi();
-		this->get_fe(context)->get_dphideta();
-
-		// Need for constructing metric tensors
-		this->get_fe(context)->get_dxyzdxi();
-		this->get_fe(context)->get_dxyzdeta();
-		this->get_fe(context)->get_dxidx();
-		this->get_fe(context)->get_dxidy();
-		this->get_fe(context)->get_dxidz();
-		this->get_fe(context)->get_detadx();
-		this->get_fe(context)->get_detady();
-		this->get_fe(context)->get_detadz();
-	}
-
-	LinearElastic::init_variables( libMesh::FEMSystem* system )
-	{
-
-	}
-
-	LinearElastic::mass_residual_impl(bool compute_jacobian,AssembleContext& context, InterriorFuncType interior_solution, VarDerivType get_sol_deriv, libMesh::Real mu )
-	{
-		const unsigned int n_u_dofs = context.get_dof_indicies(_disp_vars.u()).size();
-
-		const std::vector<libMesh::Real> &JxW = this->get_fe(context)->get_phi();
-
-		// Residuals that is being populated
-		libMesh::DenseSubVector<libMesh::Number> &Fu = context.get_elem_resisual(_disp_vars.u());
-		libMesh::DenseSubVector<libMesh::Number> &Fv = context.get_elem_resisual(_disp_vars.v());
-		libMesh::DenseSubVector<libMesh::Number> &Fw = context.get_elem_resisual(_disp_vars.w());
-
-		libMesh::DenseSubMatrix<libMesh::Number>& Kuu = context.get_elem_jacobian(_disp_vars.u(),_disp_vars.u());
-		libMesh::DenseSubMatrix<libMesh::Number>& Kvv = context.get_elem_jacobian(_disp_vars.v(),_disp_vars.v());
-		libMesh::DenseSubMatrix<libMesh::Number>& Kww = context.get_elem_jacobian(_disp_vars.w(),_disp_vars.w());
-
-		unsigned int n_qpoints = context.get_element_qrule().n_points();
-
-		for (unsigned int qp=0; qp != n_qpoints; qp++)
 		{
-			libMesh::Real jac = JxW[qp];
+			this->get_fe(context)->get_JxW();
+			this->get_fe(context)->get_phi();
+			this->get_fe(context)->get_dphi();
 
-			libMesh::Real u_ddot = 0.0; 
-			libMesh::Real v_ddot = 0.0;
-			libMesh::Real w_ddot = 0.0;
-			(context*interior_solution)( _disp_vars.u(),qp, u_ddot );
-			(context*interior_solution)( _disp_vars.v(),qp, v_ddot );
-			(context*interior_solution)( _disp_vars.w(),qp, w_ddot );
+		}
 
-			for (unsigned int i=0; i != n_u_dofs; i++)
+		void LinearElastic::mass_residual_impl(bool compute_jacobian,AssembleContext& context )
+		{
+			const unsigned int n_u_dofs = context.get_dof_indicies(_disp_vars.u()).size();
+
+			const std::vector<libMesh::Real> &JxW = this->get_fe(context)->get_phi();
+
+			// Residuals that is being populated
+			libMesh::DenseSubVector<libMesh::Number> &Fu = context.get_elem_resisual(_disp_vars.u());
+			libMesh::DenseSubVector<libMesh::Number> &Fv = context.get_elem_resisual(_disp_vars.v());
+			libMesh::DenseSubVector<libMesh::Number> &Fw = context.get_elem_resisual(_disp_vars.w());
+
+			libMesh::DenseSubMatrix<libMesh::Number>& Kuu = context.get_elem_jacobian(_disp_vars.u(),_disp_vars.u());
+			libMesh::DenseSubMatrix<libMesh::Number>& Kvv = context.get_elem_jacobian(_disp_vars.v(),_disp_vars.v());
+			libMesh::DenseSubMatrix<libMesh::Number>& Kww = context.get_elem_jacobian(_disp_vars.w(),_disp_vars.w());
+
+			unsigned int n_qpoints = context.get_element_qrule().n_points();
+
+			for (unsigned int qp=0; qp != n_qpoints; qp++)
 			{
-				Fu(i) += 0;
-				Fv(i) += 0;
-				Fw(i) += 0;
+				libMesh::Real jac = JxW[qp];
 
-				if( compute_jacobian )
+				libMesh::Real u_ddot = 0.0; 
+				libMesh::Real v_ddot = 0.0;
+				libMesh::Real w_ddot = 0.0;
+				(interior_accel)( _disp_vars.u(),qp, u_ddot );
+				(interior_accel)( _disp_vars.v(),qp, v_ddot );
+				(interior_accel)( _disp_vars.w(),qp, w_ddot );
+
+				for (unsigned int i=0; i != n_u_dofs; i++)
 				{
-					for (unsigned int j=0; j != n_u_dofs; j++)
+					Fu(i) += this->_rho*_h0*u_ddot*u_phi[i][qp]*jac;
+					Fv(i) += this->_rho*_h0*v_ddot*u_phi[i][qp]*jac;
+					Fw(i) += this->_rho*_h0*w_ddot*u_phi[i][qp]*jac;
+
+					if( compute_jacobian )
 					{
-						libMesh::Real jac_term = this->_rho*_h0*u_phi[i][qp]*u_phi[j][qp]*jac;
-						jac_term *= mu*(context.*get_solution_deriv)();
+						for (unsigned int j=0; j != n_u_dofs; j++)
+						{
+							libMesh::Real jac_term = this->_rho*_h0*u_phi[i][qp]*u_phi[j][qp]*jac;
+							jac_term *= get_elem_solution_accel_derivative();
 
-						Kuu(i,j) += jac_term;
-						Kvv(i,j) += jac_term;
-						Kww(i,j) += jac_term;
-
-
+							Kuu(i,j) += jac_term;
+							Kvv(i,j) += jac_term;
+							Kww(i,j) += jac_term;
+						}
 					}
 				}
 			}
-		}
 
-	}
+		}// end mass_residual_impl
 
 
-	LinearElastic::compute_metric_tensors(unsigned int qp, const libMesh::FEBase& elem, const AssemblyContext& context, const libMesh::Gradient& grad_u, const libMesh::Gradient& grad_v, const libMesh& grad_w, 
-			libMesh::TensorValue<libMesh::Real>& a_cov, libMesh::TensorValue<libMesh::Real>& a_contra, libMesh::TensorValue<libMesh::Real>& A_cov, libMesh::TensorValue<libMesh::Real>& A_contra,
-			libmesh::Real& lambda_sq )
-	{
-
-	}	
-
-	LinearElastic::register_postprocessingvars(const GetPot& input, PostProcessedQuatitities<libMesh::Reak>& postprocessing)
-	{
-		std::string section = "Physics/"+PhysicsNaming::elastic_membrane()+"/output_vars";
-
-		if( input.have_variable(section) )
-		{
-			unsigned int n_vars = input.vector_variable_size(section);
-
-			for( unsigned int v = 0; v < n_vars; v++ )
-			{
-				std::string name = input(section,"DIE!",v);
-
-				if( name == std::string("stress") )
-				{
-					// sigma_xx, sigma_xy, sigma_yy, sigma_yx = sigma_xy
-					// sigma_zz = 0 by assumption of this Physics
-					_stress_indices.resize(6);
-
-					this->_stress_indices[0] = postprocessing.register_quantity("stress_xx");
-
-					this->_stress_indices[1] = postprocessing.register_quantity("stress_yy");
-
-					this->_stress_indices[2] = postprocessing.register_quantity("stress_zz");
-
-					this->_stress_indices[3] = postprocessing.register_quantity("sigma_xy");
-
-					this->_stress_indices[4] = postprocessing.register_quantity("sigma_xz");
-
-					this->_stress_indices[5] = postprocessing.register_quantity("sigma_yz");
-
-				}
-				else if( name == std::string( "strain" ) )
-				{
-					// eps_xx, eps_yy, eps_zz, eps_xy, eps_xz, eps_yz
-					_strain_indices.resize(6);
-
-					this->_strain_indices[0] = postprocessing.register_quantity("strain_xx");
-
-					this->_strain_indices[1] = postprocessing.register_quantity("strain_yy");
-
-					this->_strain_indices[2] = postprocessing.register_quantity("strain_zz");
-
-					this->_strain_indices[3] = postprocessing.register_quantity("strain_xy");
-
-					this->_strain_indices[4] = postprocessing.register_quantity("strain_xz");
-
-					this->_strain_indices[5] = postprocessing.register_quantity("strain_yz");	
-				}
-				else
-				{
-					std::cerr << "Error: Invalue output_vars value for "+PhysicsNaming::elastic_membrane() << std::endl
-						<< "       Found " << name << std::endl
-						<< "       Acceptable values are: stress" << std::endl
-						<< "                              strain" << std::endl;
-					libmesh_error();
-
-				}
-			}
-
-		} 
-
-	} // end register_postprocessing
-
-	LinearElastic::element_time_derivative
+		void LinearElastic::element_time_derivative
 		(bool compute_jacobian, AssemblyContext & context)
 		{
 			const unsigned int n_u_dofs = context.get_dof_indicies(this->_disp_vars.u()).size();
@@ -211,164 +122,109 @@ namespace GRINS
 
 			unsigned int n_qpoints = context.get_element_qrule().n_points();
 
-			// All shape function gradients are w.r.t. master element coordinates
-			const std::vector<std::vector<libMesh::Real> >& dphi_dxi =
-				this->get_fe(context)->get_dphidxi();
-
-			const std::vector<std::vector<libMesh::Real> >& dphi_deta =
-				this->get_fe(context)->get_dphideta();
-
-			const libMesh::DenseSubVector<libMesh::Number>& u_coeffs = context.get_elem_solution( this->_disp_vars.u() );
-			const libMesh::DenseSubVector<libMesh::Number>& v_coeffs = context.get_elem_solution( this->_disp_vars.v() );
-			const libMesh::DenseSubVector<libMesh::Number>* w_coeffs = context.get_elem_solution( this->_disp_vars.w() );
-
-			// Need these to build up the covariant and contravariant metric tensors
-			const std::vector<libMesh::RealGradient>& dxdxi  = this->get_fe(context)->get_dxyzdxi();
-			const std::vector<libMesh::RealGradient>& dxdeta = this->get_fe(context)->get_dxyzdeta();
-
+			// Getting phi and dphi
+			const std::vector<std::vector<libMesh::Real>> & phi = this->get_fe(context)->get_phi();
+			const std::vector<libmesh::RealGradient> & grad_phi = this->get_fe(context)->get_dphi();
 
 			for (unsigned in qp = 0; qp != n_qpoints; qp++)
 			{
 				// Gradients are w.r.t. master element coordinates
 				libmesh::Gradient grad_u grad_v grad_w;
+				grad_u = interior_gradient(disp_vars.u(),qp);
+				grad_v = interior_gradient(disp_vars.v(),qp);
+				grad_w = interior_gradient(disp_vars.v(),qp);
 
-				for( unsigned int d = 0; d < n_u_dofs; d++)
-				{
-					libmesh::RealGradient u_gradphi( dphi_dxi[d][qp], dphi_deta[d][qp] );
-					grad_u += u_coeffs(d)*u_gradphi;
-					grad_v += v_coeffs(d)*v_gradphi;
-					gead_w += w_coeffs(d)*w_gradphi;
-				}
+				Tensor grad_U (grad_u,grad_v,grad_w);						
+				Tensor tau
 
-				libMesh::RealGradient grad_x( dxdxi[qp](0), dxdeta[qp](0) );
-				libMesh::RealGradient grad_y( dxdxi[qp](1), dxdeta[qp](1) );
-				libMesh::RealGradient grad_z( dxdxi[qp](2), dxdeta[qp](2) );
-
-				libMesh::TensorValue<libMesh::Real> a_cov, a_contra, A_cov, A_contra;
-				libMesh::Real lambda_sq=0;	
-
-				this->compute_metric_tensors(qp, *(this->get_fe(context)), context, grad_v, grad_v, grad_w, a_cov, a_contra, A_cov, A_contra, lambda_sq);
-
-				const unsigned int part_dim = 3; //The part's dimension is always 3 for this physics
-
-				// Compute stress and elasticity tensors
-				libmesh::TensorValue<libMesh::Real> tau;
-				ElasticityTensor C;
-				this->_stress_strain_law.compute_stress_and_elasticity(part_dim,a_contra,a_cov,A_contra,A_cov,tau,C);
-
-				libMesh::Real jac = JxW[qp];
-
-				for (unsigned int  i=0; i != n_u_dofs; i++)
-				{
-					libMesh::Real jac = JxW[qp];
-
-					for(unsigned int alpha = 0; alpha < part_dim; alpha++)
+					for (unsigned int m = 0; m < n_u_dofs; m++ )
 					{
-						for(unsigned int beta = 0; beta < part_dim ; beta ++)
+						for( unsigned int n = 0; n < n_u_dofs; n++ )
 						{
-							Fu(i) += factor*( (grad_x(beta) + grad_u(beta))*u_gradphi(alpha) +
-									(grad_x(alpha) + grad_u(alpha))*u_gradphi(beta) );
-
-							Fv(i) += factor*( (grad_y(beta) + grad_v(beta))*u_gradphi(alpha) +
-									(grad_y(alpha) + grad_v(alpha))*u_gradphi(beta) );
-
-
-							Fw(i) += factor*( (grad_z(beta) + grad_w(beta))*u_gradphi(alpha) +
-									(grad_z(alpha) + grad_w(alpha))*u_gradphi(beta) );
-
-
+							for( unsigned int o = 0; o < n_u_dofs; o++)
+							{
+								for( unsigned int p = 0; p < n_u_dofs; p++)
+								{
+									tau(m,n) = C(m,n,o,p)*grad_U(o,p);	
+								}
+							}
 						}
 					}
 
-				}
-				if( compute_jacobian )
+
+				for (unsigned int  i=0; i != n_u_dofs; i++)
 				{
-					for (unsigned int i=0; i != n_u_dofs; i++)
+
+					for(unsigned int alpha = 0; alpha < part_dim; alpha++)
 					{
-						libMesh::RealGradient u_gradphi_i( dphi_dxi[i][qp], dphi_deta[i][qp] );
 
-						for (unsigned int j=0; j != n_u_dofs; j++)
+						Fu(i) += tau(0,alpha)*grad_phi[i][qp](alpha)*JxW[qp];
+
+						Fv(i) += tau(1,alpha)*grad_phi[i][qp](alpha)*JxW[qp];
+
+						Fw(i) += tau(2,alpha)*grad_phi[i][qp](alpha)*JxW[qp];
+
+						if( compute_jacobian )
 						{
-							libMesh::RealGradient u_gradphi_j( dphi_dxi[j][qp], dphi_deta[j][qp] );
-
-							for( unsigned int alpha = 0; alpha < manifold_dim; alpha++ )
+							for (unsigned int j=0; j != n_u_dofs; j++)
 							{
-								for( unsigned int beta = 0; beta < manifold_dim; beta++ )
+								for (unsigned int beta = 0; beta < 3; beta++)
 								{
-									const libMesh::Real diag_term = 0.5*this->_h0*jac*tau(alpha,beta)*context.get_elem_solution_derivative()*
-										( u_gradphi_j(beta)*u_gradphi_i(alpha) +
-										  u_gradphi_j(alpha)*u_gradphi_i(beta) );
-									Kuu(i,j) += diag_term;
+									// Convenience
+									const Real c0 = grad_phi[j][qp](beta)*c.get_elem_solution_derivative();
 
-									Kvv(i,j) += diag_term;
+									libMesh::Real dtau_uu = elasticity_tensor(0, alpha, 0, beta)*c0;
+									libMesh::Real dtau_uv = elasticity_tensor(0, alpha, 1, beta)*c0;
+									libMesh::Real dtau_uw = elasticity_tensor(0, alpha, 2, beta)*c0;
+									libMesh::Real dtau_vu = elasticity_tensor(1, alpha, 0, beta)*c0;
+									libMesh::Real dtau_vv = elasticity_tensor(1, alpha, 1, beta)*c0;
+									libMesh::Real dtau_vw = elasticity_tensor(1, alpha, 2, beta)*c0;
+									libMesh::Real dtau_wu = elasticity_tensor(2, alpha, 0, beta)*c0;
+									libMesh::Real dtau_wv = elasticity_tensor(2, alpha, 1, beta)*c0;
+									libMesh::Real dtau_ww = elasticity_tensor(2, alpha, 2, beta)*c0;
 
-
-									Kww(i,j) += diag_term;
-
-									for( unsigned int lambda = 0; lambda < manifold_dim; lambda++ )
-									{
-										for( unsigned int mu = 0; mu < manifold_dim; mu++ )
-										{
-											const libMesh::Real dgamma_du = 0.5*( u_gradphi_j(lambda)*(grad_x(mu)+grad_u(mu)) +
-													(grad_x(lambda)+grad_u(lambda))*u_gradphi_j(mu) );
-
-											const libMesh::Real dgamma_dv = 0.5*( u_gradphi_j(lambda)*(grad_y(mu)+grad_v(mu)) +
-													(grad_y(lambda)+grad_v(lambda))*u_gradphi_j(mu) );
-
-											const libMesh::Real C1 = 0.5*this->_h0*jac*C(alpha,beta,lambda,mu) * 
-												context.get_elem_solution_derivative();
-
-											const libMesh::Real x_term = C1*( (grad_x(beta)+grad_u(beta))*u_gradphi_i(alpha) +
-													(grad_x(alpha)+grad_u(alpha))*u_gradphi_i(beta) );
-
-											const libMesh::Real y_term = C1*( (grad_y(beta)+grad_v(beta))*u_gradphi_i(alpha) +
-													(grad_y(alpha)+grad_v(alpha))*u_gradphi_i(beta) );
-
-											Kuu(i,j) += x_term*dgamma_du;
-
-											Kuv(i,j) += x_term*dgamma_dv;
-
-											Kvu(i,j) += y_term*dgamma_du;
-
-											Kvv(i,j) += y_term*dgamma_dv;
-
-
-
-											const libMesh::Real dgamma_dw = 0.5*( u_gradphi_j(lambda)*(grad_z(mu)+grad_w(mu)) +
-													(grad_z(lambda)+grad_w(lambda))*u_gradphi_j(mu) );
-
-											const libMesh::Real z_term = C1*( (grad_z(beta)+grad_w(beta))*u_gradphi_i(alpha) +
-													(grad_z(alpha)+grad_w(alpha))*u_gradphi_i(beta) );
-
-											Kuw(i,j) += x_term*dgamma_dw;
-
-											Kvw(i,j) += y_term*dgamma_dw;
-
-											Kwu(i,j) += z_term*dgamma_du;
-
-											Kwv(i,j) += z_term*dgamma_dv;
-
-										} // end mu for loop
-									} //end lambda for loop
-								} // end beta for loop
-							} // end alpha for loop
-						} // end j for loop
-					} // end i for loop
-				} // end if compute jacobian
+									Kuu(i,j) += dtau_uu*grad_phi[i][qp](alpha)*JxW[qp];
+									Kuv(i,j) += dtau_uv*grad_phi[i][qp](alpha)*JxW[qp];
+									Kuw(i,j) += dtau_uw*grad_phi[i][qp](alpha)*JxW[qp];
+									Kvu(i,j) += dtau_vu*grad_phi[i][qp](alpha)*JxW[qp];
+									Kvv(i,j) += dtau_vv*grad_phi[i][qp](alpha)*JxW[qp];
+									Kvw(i,j) += dtau_vw*grad_phi[i][qp](alpha)*JxW[qp];
+									Kwu(i,j) += dtau_wu*grad_phi[i][qp](alpha)*JxW[qp];
+									Kwv(i,j) += dtau_wv*grad_phi[i][qp](alpha)*JxW[qp];
+									Kww(i,j) += dtau_ww*grad_phi[i][qp](alpha)*JxW[qp];
+								}
+							}
+						} // end if compute jacobian
+					} // end for alpha
+				} // end for i
 			} // end for loop through qp
 		} //end element time derivative			
-
-
-	Linearelastic::element_contraint(bool compute_jacobian, AssemblyContext & context)
+libMesh::Real LinearElastic::C(unsigned int i, unsigned int j, unsigned int k; unsigned int l)
 	{
+		MaterialParsing::read_property( input,"E",(*this), E);
+		MaterialParsing::read_property( input,"nu",(*this),nu);
+		
+		// Define the Lame constants
+		  const Real lambda_1 = (E*nu)/((1.+nu)*(1.-2.*nu));
+		  const Real lambda_2 = E/(2.*(1.+nu));
+		
+		       return
+		           lambda_1 * kronecker_delta(i, j) * kronecker_delta(k, l) +
+	           lambda_2 * (kronecker_delta(i, k) * kronecker_delta(j, l) + kronecker_delta(i, l) * kronecker_delta(j, k));
+		
+	} //end C
 
-	}
-
-
-	void LinearElastic::compute_postprocessed_quantity(unsigned int quantity_index, const AssemblyContext& context, const libMesh::Point& point, libMesh::Real& value)
+libMesh::Real LinearElastic::kronecker_delta(unsigned int i, unsigned int j)
 	{
-
-	}
+		if(i == j)
+		{
+			return 1.0;
+		}
+		else
+		{
+			return 0.0;
+		}
+	} // end kronecker_delta
 
 } // end class LinearElastic
 
