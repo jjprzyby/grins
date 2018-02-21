@@ -182,6 +182,9 @@ namespace GRINS
     static PhysicsName elastic_cable_constant_gravity()
     { return "ElasticCableConstantGravity"+suffix(); }
 
+    static PhysicsName linear_elastic()
+    { return "LinearElastic"+suffix(); }
+
     static PhysicsName constant_source_term()
     { return "ConstantSourceTerm"+suffix(); }
 

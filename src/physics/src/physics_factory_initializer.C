@@ -76,6 +76,8 @@
 #include "grins/elastic_membrane.h"
 #include "grins/elastic_membrane_rayleigh_damping.h"
 
+#include "grins/linear_elastic.h"
+
 #include "grins/low_mach_navier_stokes.h"
 #include "grins/low_mach_navier_stokes_braack_stab.h"
 #include "grins/low_mach_navier_stokes_spgsm_stab.h"
@@ -216,6 +218,11 @@ namespace GRINS
     static PhysicsFactoryPlaneStressSolids<ElasticMembraneRayleighDamping>
       grins_factory_elastic_membrane_rayleigh_damping
       (PhysicsNaming::elastic_membrane_rayleigh_damping(),PhysicsNaming::elastic_membrane());
+
+
+   static PhysicsFactoryPlaneStressSolids<LinearElastic>
+      grins_factory_linear_elastic
+      (PhysicsNaming::linear_elastic(),PhysicsNaming::linear_elastic());
 
 
     static PhysicsFactoryVariableDensityFlow<LowMachNavierStokes> grins_factory_low_mach_navier_stokes
